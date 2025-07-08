@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "firebase-admin": "^13.4.0",
     "lucide-react": "^0.300.0",
     "pg": "^8.x.x",
     "react": "^18.2.0",

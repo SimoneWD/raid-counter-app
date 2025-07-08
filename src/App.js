@@ -1,4 +1,4 @@
-import React, { useState } from 'react'; // <--- CORREZIONE QUI: Aggiunto useState
+import React, { useState, useEffect } from 'react'; // Assicurati di avere useEffect qui
 import { Plus, Trash2, Edit, Save, X, Calendar, Users, Gem } from 'lucide-react';
 
 const ShardTracker = () => {
@@ -7,7 +7,7 @@ const ShardTracker = () => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [editingPlayer, setEditingPlayer] = useState(null);
   const [editName, setEditName] = useState('');
-  const [playerToDelete, setPlayerToDelete] = useState(null); // Stato per la conferma di eliminazione del giocatore
+  const [playerToDelete, setPlayerToDelete] = useState(null);
 
   // Stato per la gestione dei campioni leggendari
   const [legendaryChampions, setLegendaryChampions] = useState([]);
@@ -15,13 +15,34 @@ const ShardTracker = () => {
   const [newLegendary, setNewLegendary] = useState({
     name: '',
     type: 'normal',
-    shardType: 'ancient', // Tipo di scheggia predefinito per il nuovo leggendario
+    shardType: 'ancient',
     date: new Date().toISOString().split('T')[0],
     player: ''
   });
-  const [legendaryToDelete, setLegendaryToDelete] = useState(null); // Stato per la conferma di eliminazione del campione leggendario
+  const [legendaryToDelete, setLegendaryToDelete] = useState(null);
 
-  // Definisce i tipi di schegge disponibili con le loro proprietà (ID, nome, colore Tailwind)
+  // Carica i dati dal database all'avvio dell'applicazione
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const playersResponse = await fetch('/.netlify/functions/getPlayers');
+        const playersData = await playersResponse.json();
+        setPlayers(playersData);
+
+        const championsResponse = await fetch('/.netlify/functions/getLegendaryChampions');
+        const championsData = await championsResponse.json();
+        setLegendaryChampions(championsData);
+
+      } catch (error) {
+        console.error("Errore nel caricamento dei dati:", error);
+        // Implementa qui una gestione dell'errore visibile all'utente
+      }
+    };
+
+    fetchData();
+  }, []); // Esegue solo al montaggio del componente
+
+  // Definisce i tipi di schegge disponibili con le loro proprietà
   const shardTypes = [
     { id: 'ancient', name: 'ANCIENT', color: 'bg-blue-500' },
     { id: 'void', name: 'VOID', color: 'bg-purple-500' },
@@ -31,21 +52,26 @@ const ShardTracker = () => {
   ];
 
   // Funzione per aggiungere un nuovo giocatore
-  const addPlayer = () => {
+  const addPlayer = async () => {
     if (newPlayerName.trim()) {
-      const newPlayer = {
-        id: Date.now(), // ID univoco basato sul timestamp
+      const playerToSend = {
         name: newPlayerName.trim(),
-        shards: { // Inizializza il conteggio delle schegge per il nuovo giocatore
-          ancient: 0,
-          void: 0,
-          primal: 0,
-          sacred: 0,
-          prism: 0
-        }
+        shards: { ancient: 0, void: 0, primal: 0, sacred: 0, prism: 0 }
       };
-      setPlayers([...players, newPlayer]); // Aggiunge il nuovo giocatore allo stato
-      setNewPlayerName(''); // Pulisce il campo di input
+
+      try {
+        const response = await fetch('/.netlify/functions/createPlayer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(playerToSend),
+        });
+        if (!response.ok) throw new Error('Errore nella creazione del giocatore');
+        const createdPlayer = await response.json();
+        setPlayers([...players, createdPlayer]);
+        setNewPlayerName('');
+      } catch (error) {
+        console.error("Errore nell'aggiunta del giocatore:", error);
+      }
     }
   };
 
@@ -55,18 +81,29 @@ const ShardTracker = () => {
   };
 
   // Funzione per confermare ed eseguire l'eliminazione del giocatore
-  const confirmDeletePlayer = () => {
+  const confirmDeletePlayer = async () => {
     if (playerToDelete) {
-      setPlayers(players.filter(p => p.id !== playerToDelete)); // Filtra il giocatore da eliminare
-      // Rimuove anche tutti i campioni leggendari associati al giocatore eliminato
-      setLegendaryChampions(legendaryChampions.filter(c => c.player !== playerToDelete));
-      setPlayerToDelete(null); // Chiude il modale di conferma
+      try {
+        const response = await fetch('/.netlify/functions/deletePlayer', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId: playerToDelete }),
+        });
+        if (!response.ok) throw new Error('Errore nell\'eliminazione del giocatore');
+
+        setPlayers(players.filter(p => p.id !== playerToDelete));
+        // Rimuove anche i campioni leggendari associati (la FK in DB con ON DELETE CASCADE lo farà, ma aggiorniamo anche lo stato locale)
+        setLegendaryChampions(legendaryChampions.filter(c => c.player !== playerToDelete));
+        setPlayerToDelete(null);
+      } catch (error) {
+        console.error("Errore nell'eliminazione del giocatore:", error);
+      }
     }
   };
 
   // Funzione per annullare l'eliminazione del giocatore
   const cancelDeletePlayer = () => {
-    setPlayerToDelete(null); // Chiude il modale di conferma
+    setPlayerToDelete(null);
   };
 
   // Funzione per iniziare la modifica del nome di un giocatore
@@ -76,58 +113,84 @@ const ShardTracker = () => {
   };
 
   // Funzione per salvare il nome del giocatore modificato
-  const saveEdit = () => {
-    setPlayers(players.map(p =>
-      p.id === editingPlayer ? { ...p, name: editName } : p // Aggiorna il nome del giocatore
-    ));
-    setEditingPlayer(null); // Esce dalla modalità di modifica
-    setEditName(''); // Pulisce il campo di input di modifica
+  const saveEdit = async () => {
+    if (editingPlayer && editName.trim()) {
+      try {
+        const response = await fetch('/.netlify/functions/updatePlayerName', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId: editingPlayer, newName: editName.trim() }),
+        });
+        if (!response.ok) throw new Error('Errore nell\'aggiornamento del nome del giocatore');
+        const updatedPlayer = await response.json();
+
+        setPlayers(players.map(p =>
+          p.id === editingPlayer ? updatedPlayer : p
+        ));
+        setEditingPlayer(null);
+        setEditName('');
+      } catch (error) {
+        console.error("Errore nel salvataggio del nome:", error);
+      }
+    }
   };
 
   // Funzione per annullare la modifica del nome del giocatore
   const cancelEdit = () => {
-    setEditingPlayer(null); // Esce dalla modalità di modifica
-    setEditName(''); // Pulisce il campo di input di modifica
+    setEditingPlayer(null);
+    setEditName('');
   };
 
   // Funzione per incrementare o decrementare il conteggio delle schegge per un giocatore
-  const updateShardCount = (playerId, shardType, increment) => {
-    setPlayers(players.map(p => {
-      if (p.id === playerId) {
-        const newCount = Math.max(0, p.shards[shardType] + increment); // Assicura che il conteggio non scenda sotto zero
-        return {
-          ...p,
-          shards: {
-            ...p.shards,
-            [shardType]: newCount
-          }
-        };
-      }
-      return p;
-    }));
+  const updateShardCount = async (playerId, shardType, increment) => {
+    try {
+      const response = await fetch('/.netlify/functions/updatePlayerShards', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, shardType, increment }),
+      });
+      if (!response.ok) throw new Error('Errore nell\'aggiornamento delle schegge');
+      const updatedPlayer = await response.json(); // Ricevi il giocatore con le schegge aggiornate
+
+      setPlayers(players.map(p =>
+        p.id === playerId ? updatedPlayer : p
+      ));
+    } catch (error) {
+      console.error("Errore nell'aggiornamento delle schegge:", error);
+    }
   };
 
   // Funzione per aggiungere un nuovo campione leggendario
-  const addLegendaryChampion = () => {
+  const addLegendaryChampion = async () => {
     if (newLegendary.name.trim() && newLegendary.player) {
-      const champion = {
-        id: Date.now(), // ID univoco per il campione
+      const championToSend = {
         name: newLegendary.name.trim(),
         type: newLegendary.type,
-        shardType: newLegendary.shardType, // Include il tipo di scheggia selezionato
+        shardType: newLegendary.shardType,
         date: newLegendary.date,
-        player: parseInt(newLegendary.player) // Assicura che l'ID del giocatore sia un intero
+        player: parseInt(newLegendary.player) // Assicurati che l'ID del giocatore sia un intero
       };
-      setLegendaryChampions([...legendaryChampions, champion]); // Aggiunge il nuovo campione
-      // Resetta i campi del modulo dopo l'aggiunta
-      setNewLegendary({
-        name: '',
-        type: 'normal',
-        shardType: 'ancient',
-        date: new Date().toISOString().split('T')[0],
-        player: ''
-      });
-      setShowLegendaryForm(false); // Nasconde il modulo
+
+      try {
+        const response = await fetch('/.netlify/functions/createLegendaryChampion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(championToSend),
+        });
+        if (!response.ok) throw new Error('Errore nella creazione del campione');
+        const createdChampion = await response.json();
+        setLegendaryChampions([...legendaryChampions, createdChampion]);
+        setNewLegendary({
+          name: '',
+          type: 'normal',
+          shardType: 'ancient',
+          date: new Date().toISOString().split('T')[0],
+          player: ''
+        });
+        setShowLegendaryForm(false);
+      } catch (error) {
+        console.error("Errore nell'aggiunta del campione leggendario:", error);
+      }
     }
   };
 
@@ -137,16 +200,27 @@ const ShardTracker = () => {
   };
 
   // Funzione per confermare ed eseguire l'eliminazione del campione leggendario
-  const confirmDeleteLegendaryChampion = () => {
+  const confirmDeleteLegendaryChampion = async () => {
     if (legendaryToDelete) {
-      setLegendaryChampions(legendaryChampions.filter(c => c.id !== legendaryToDelete)); // Filtra il campione da eliminare
-      setLegendaryToDelete(null); // Chiude il modale di conferma
+      try {
+        const response = await fetch('/.netlify/functions/deleteLegendaryChampion', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ championId: legendaryToDelete }),
+        });
+        if (!response.ok) throw new Error('Errore nell\'eliminazione del campione');
+
+        setLegendaryChampions(legendaryChampions.filter(c => c.id !== legendaryToDelete));
+        setLegendaryToDelete(null);
+      } catch (error) {
+        console.error("Errore nell'eliminazione del campione:", error);
+      }
     }
   };
 
   // Funzione per annullare l'eliminazione del campione leggendario
   const cancelDeleteLegendaryChampion = () => {
-    setLegendaryToDelete(null); // Chiude il modale di conferma
+    setLegendaryToDelete(null);
   };
 
   // Funzione di supporto per ottenere il nome del giocatore tramite ID
@@ -170,7 +244,7 @@ const ShardTracker = () => {
   // Funzione per calcolare il totale delle schegge di tutti i giocatori
   const getTotalShards = () => {
     return players.reduce((total, player) => {
-      return total + Object.values(player.shards).reduce((sum, count) => sum + count, 0);
+      return total + Object.values(player.shards || {}).reduce((sum, count) => sum + count, 0);
     }, 0);
   };
 

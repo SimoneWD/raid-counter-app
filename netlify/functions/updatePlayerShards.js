@@ -6,21 +6,19 @@ exports.handler = async (event, context) => {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  // Ora riceve direttamente newCount
   const { playerId, shardType, newCount } = JSON.parse(event.body);
 
   const client = getDbClient();
   try {
     await client.connect();
 
-    // Recupera le schegge attuali per aggiornare solo il tipo specifico
     const currentPlayerData = await client.query('SELECT shards FROM players WHERE id = $1;', [playerId]);
     if (currentPlayerData.rows.length === 0) {
       return { statusCode: 404, body: 'Player not found' };
     }
 
-    const currentShards = currentPlayerData.rows[0].shards || {}; // Assicura che shards sia un oggetto
-    const updatedShards = { ...currentShards, [shardType]: newCount }; // Imposta il nuovo conteggio
+    const currentShards = currentPlayerData.rows[0].shards || {};
+    const updatedShards = { ...currentShards, [shardType]: newCount };
 
     const res = await client.query(
       'UPDATE players SET shards = $1 WHERE id = $2 RETURNING *;',

@@ -246,7 +246,7 @@ const ShardTracker = () => {
 
   // Funzione per aggiungere un nuovo campione leggendario
   const addLegendaryChampion = async () => {
-    // Aggiunto controllo per newLegendary.shardType.trim() per evitare "UNKNOWN"
+    // Aggiunto controllo per newLegendary.name, player e shardType
     if (newLegendary.name.trim() && newLegendary.player && newLegendary.shardType.trim()) {
       setIsProcessingAction(true); // Inizia l'azione
       const championToSend = {
@@ -701,10 +701,12 @@ const ShardTracker = () => {
                         <p>Tipo: <span className={champion.type === 'void' ? 'text-purple-400 font-medium' : 'text-blue-400 font-medium'}>
                           {champion.type === 'void' ? 'Void' : 'Normale'}
                         </span></p>
+                        {/* CORREZIONE PER 'shard' IS NOT DEFINED: usa champion.shard_type */}
                         <p>Scheggia: <span className={`px-2 py-1 rounded-md text-xs font-semibold ${getShardTypeColor(champion.shard_type)} text-white`}>
                           {getShardTypeName(champion.shard_type)}
                         </span></p>
                         <p>Data: <span className="font-medium">{new Date(champion.date).toLocaleDateString('it-IT')}</span></p>
+                        {/* CORREZIONE PER PLAYER_ID: usa champion.player_id */}
                         <p>Giocatore: <span className="text-green-400 font-medium">{getPlayerName(champion.player_id)}</span></p>
                       </div>
                     </div>
@@ -768,6 +770,17 @@ const ShardTracker = () => {
                     Sei sicuro di voler eliminare il campione leggendario <span className="font-bold text-yellow-400">
                       {legendaryChampions.find(c => c.id === legendaryToDelete)?.name || 'Sconosciuto'}
                     </span>?
+                    {/* CORREZIONE PER 'shard' IS NOT DEFINED NELLA MODAL: usa il campione trovato per ID */}
+                    {legendaryChampions.find(c => c.id === legendaryToDelete)?.shard_type && (
+                      <>
+                        <br />
+                        <span className="text-sm text-gray-400 mt-2 block">
+                          Tipo Scheggia: <span className={`px-2 py-1 rounded-md text-xs font-semibold ${getShardTypeColor(legendaryChampions.find(c => c.id === legendaryToDelete).shard_type)} text-white`}>
+                            {getShardTypeName(legendaryChampions.find(c => c.id === legendaryToDelete).shard_type)}
+                          </span>
+                        </span>
+                      </>
+                    )}
                     <br />
                     <span className="text-sm text-yellow-400 mt-2 block">
                       Questa azione è irreversibile.

@@ -1,26 +1,26 @@
 // netlify/functions/updatePlayerShards.js
-const { getDbClient } = require('./db_config'); // Assicurati che il percorso sia corretto
+const { getDbClient } = require('./db_config');
 
 exports.handler = async (event, context) => {
   if (event.httpMethod !== 'PUT') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const { playerId, shardType, increment } = JSON.parse(event.body);
+  // Ora riceve direttamente newCount
+  const { playerId, shardType, newCount } = JSON.parse(event.body);
 
   const client = getDbClient();
   try {
     await client.connect();
 
-    // Ottieni il giocatore attuale per aggiornare le schegge
+    // Recupera le schegge attuali per aggiornare solo il tipo specifico
     const currentPlayerData = await client.query('SELECT shards FROM players WHERE id = $1;', [playerId]);
     if (currentPlayerData.rows.length === 0) {
       return { statusCode: 404, body: 'Player not found' };
     }
 
-    const currentShards = currentPlayerData.rows[0].shards || {};
-    const newCount = Math.max(0, (currentShards[shardType] || 0) + increment);
-    const updatedShards = { ...currentShards, [shardType]: newCount };
+    const currentShards = currentPlayerData.rows[0].shards || {}; // Assicura che shards sia un oggetto
+    const updatedShards = { ...currentShards, [shardType]: newCount }; // Imposta il nuovo conteggio
 
     const res = await client.query(
       'UPDATE players SET shards = $1 WHERE id = $2 RETURNING *;',

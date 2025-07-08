@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit, Save, X, Calendar, Users, Gem } from 'lucide-react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const ShardTracker = () => {
   // Stato per la gestione dei giocatori, delle loro schegge e della modalità di modifica
@@ -7,7 +9,7 @@ const ShardTracker = () => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [editingPlayer, setEditingPlayer] = useState(null);
   const [editName, setEditName] = useState('');
-  const [playerToDelete, setPlayerToDelete] = useState(null); // Stato per la conferma di eliminazione del giocatore
+  const [playerToDelete, setPlayerToDelete] = useState(null);
 
   // Stato per la gestione dei campioni leggendari
   const [legendaryChampions, setLegendaryChampions] = useState([]);
@@ -15,27 +17,31 @@ const ShardTracker = () => {
   const [newLegendary, setNewLegendary] = useState({
     name: '',
     type: 'normal',
-    shardType: 'ancient', // Tipo di scheggia predefinito per il nuovo leggendario
+    shardType: 'ancient',
     date: new Date().toISOString().split('T')[0],
     player: ''
   });
-  const [legendaryToDelete, setLegendaryToDelete] = useState(null); // Stato per la conferma di eliminazione del campione leggendario
+  const [legendaryToDelete, setLegendaryToDelete] = useState(null);
+
+  // NUOVI STATI PER INPUT MANUALE E CARICAMENTO/AZIONI
+  const [editingShardInput, setEditingShardInput] = useState({ playerId: null, shardType: null, value: '' });
+  const [isLoadingInitialData, setIsLoadingInitialData] = useState(true); // Per il caricamento iniziale
+  const [isProcessingAction, setIsProcessingAction] = useState(false); // Per le azioni di modifica/aggiunta/eliminazione
 
   // Carica i dati dal database all'avvio dell'applicazione
   useEffect(() => {
     const fetchData = async () => {
+      setIsLoadingInitialData(true); // Inizia il caricamento
       try {
         // --- Caricamento Giocatori ---
         const playersResponse = await fetch('/.netlify/functions/getPlayers');
         if (!playersResponse.ok) {
           const errorBody = await playersResponse.text();
           console.error("Errore nel fetch dei giocatori:", playersResponse.status, playersResponse.statusText, errorBody);
-          // Importante: in caso di errore, inizializza con un array vuoto per evitare "reduce is not a function"
           setPlayers([]);
           throw new Error('Failed to fetch players');
         }
         const playersData = await playersResponse.json();
-        // Controllo aggiuntivo per assicurarsi che i dati siano un array
         if (!Array.isArray(playersData)) {
             console.error("I dati dei giocatori ricevuti non sono un array:", playersData);
             setPlayers([]);
@@ -48,12 +54,10 @@ const ShardTracker = () => {
         if (!championsResponse.ok) {
           const errorBody = await championsResponse.text();
           console.error("Errore nel fetch dei campioni:", championsResponse.status, championsResponse.statusText, errorBody);
-          // Importante: in caso di errore, inizializza con un array vuoto
           setLegendaryChampions([]);
           throw new Error('Failed to fetch legendary champions');
         }
         const championsData = await championsResponse.json();
-        // Controllo aggiuntivo per assicurarsi che i dati siano un array
         if (!Array.isArray(championsData)) {
             console.error("I dati dei campioni ricevuti non sono un array:", championsData);
             setLegendaryChampions([]);
@@ -63,14 +67,16 @@ const ShardTracker = () => {
 
       } catch (error) {
         console.error("Errore generale nel caricamento dei dati:", error);
-        // Assicurati che gli stati siano array anche in caso di eccezione generale
         setPlayers([]);
         setLegendaryChampions([]);
+        toast.error("Impossibile caricare i dati iniziali."); // Notifica di errore
+      } finally {
+        setIsLoadingInitialData(false); // Termina il caricamento
       }
     };
 
     fetchData();
-  }, []); // Esegue solo al montaggio del componente
+  }, []);
 
   // Definisce i tipi di schegge disponibili con le loro proprietà (ID, nome, colore Tailwind)
   const shardTypes = [
@@ -84,6 +90,7 @@ const ShardTracker = () => {
   // Funzione per aggiungere un nuovo giocatore
   const addPlayer = async () => {
     if (newPlayerName.trim()) {
+      setIsProcessingAction(true); // Inizia l'azione
       const playerToSend = {
         name: newPlayerName.trim(),
         shards: { ancient: 0, void: 0, primal: 0, sacred: 0, prism: 0 }
@@ -102,9 +109,15 @@ const ShardTracker = () => {
         const createdPlayer = await response.json();
         setPlayers(prevPlayers => [...prevPlayers, createdPlayer]); // Usa prevPlayers per lo stato più recente
         setNewPlayerName('');
+        toast.success("Giocatore aggiunto con successo!"); // Notifica di successo
       } catch (error) {
         console.error("Errore nell'aggiunta del giocatore:", error);
+        toast.error("Errore nell'aggiunta del giocatore."); // Notifica di errore
+      } finally {
+        setIsProcessingAction(false); // Termina l'azione
       }
+    } else {
+        toast.warn("Il nome del giocatore non può essere vuoto!"); // Avviso per input vuoto
     }
   };
 
@@ -116,6 +129,7 @@ const ShardTracker = () => {
   // Funzione per confermare ed eseguire l'eliminazione del giocatore
   const confirmDeletePlayer = async () => {
     if (playerToDelete) {
+      setIsProcessingAction(true); // Inizia l'azione
       try {
         const response = await fetch('/.netlify/functions/deletePlayer', {
           method: 'DELETE',
@@ -128,11 +142,14 @@ const ShardTracker = () => {
         }
 
         setPlayers(prevPlayers => prevPlayers.filter(p => p.id !== playerToDelete));
-        // Rimuove anche i campioni leggendari associati (la FK in DB con ON DELETE CASCADE lo farà, ma aggiorniamo anche lo stato locale)
-        setLegendaryChampions(prevChampions => prevChampions.filter(c => c.player_id !== playerToDelete)); // Usa player_id per il filtro
+        setLegendaryChampions(prevChampions => prevChampions.filter(c => c.player_id !== playerToDelete));
         setPlayerToDelete(null);
+        toast.success("Giocatore eliminato con successo!"); // Notifica di successo
       } catch (error) {
         console.error("Errore nell'eliminazione del giocatore:", error);
+        toast.error("Errore nell'eliminazione del giocatore."); // Notifica di errore
+      } finally {
+        setIsProcessingAction(false); // Termina l'azione
       }
     }
   };
@@ -151,6 +168,7 @@ const ShardTracker = () => {
   // Funzione per salvare il nome del giocatore modificato
   const saveEdit = async () => {
     if (editingPlayer && editName.trim()) {
+      setIsProcessingAction(true); // Inizia l'azione
       try {
         const response = await fetch('/.netlify/functions/updatePlayerName', {
           method: 'PUT',
@@ -168,9 +186,15 @@ const ShardTracker = () => {
         ));
         setEditingPlayer(null);
         setEditName('');
+        toast.success("Nome giocatore aggiornato!"); // Notifica di successo
       } catch (error) {
         console.error("Errore nel salvataggio del nome:", error);
+        toast.error("Errore nell'aggiornamento del nome."); // Notifica di errore
+      } finally {
+        setIsProcessingAction(false); // Termina l'azione
       }
+    } else {
+        toast.warn("Il nome non può essere vuoto durante la modifica."); // Avviso se vuoto
     }
   };
 
@@ -181,24 +205,42 @@ const ShardTracker = () => {
   };
 
   // Funzione per incrementare o decrementare il conteggio delle schegge per un giocatore
-  const updateShardCount = async (playerId, shardType, increment) => {
+  // O per impostare un valore manuale
+  const updateShardCount = async (playerId, shardType, increment = null, manualValue = null) => {
+    let newCount;
+    if (manualValue !== null) {
+      newCount = Math.max(0, parseInt(manualValue) || 0); // Assicura che sia un numero e non vada sotto zero
+    } else if (increment !== null) {
+      const player = players.find(p => p.id === playerId);
+      const currentCount = player ? (player.shards[shardType] || 0) : 0;
+      newCount = Math.max(0, currentCount + increment);
+    } else {
+      return; // Nessuna operazione specificata
+    }
+
+    setIsProcessingAction(true); // Inizia l'azione
     try {
       const response = await fetch('/.netlify/functions/updatePlayerShards', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId, shardType, increment }),
+        body: JSON.stringify({ playerId, shardType, newCount }), // Invia newCount esatto
       });
       if (!response.ok) {
             const errorBody = await response.text();
             throw new Error(`Errore nell'aggiornamento delle schegge: ${response.status} ${response.statusText} - ${errorBody}`);
       }
-      const updatedPlayer = await response.json(); // Ricevi il giocatore con le schegge aggiornate
+      const updatedPlayer = await response.json();
 
       setPlayers(prevPlayers => prevPlayers.map(p =>
         p.id === playerId ? updatedPlayer : p
       ));
+      setEditingShardInput({ playerId: null, shardType: null, value: '' }); // Resetta la modalità di modifica
+      toast.success("Schegge aggiornate!"); // Notifica di successo
     } catch (error) {
       console.error("Errore nell'aggiornamento delle schegge:", error);
+      toast.error("Errore nell'aggiornamento delle schegge."); // Notifica di errore
+    } finally {
+      setIsProcessingAction(false); // Termina l'azione
     }
   };
 
@@ -206,6 +248,7 @@ const ShardTracker = () => {
   const addLegendaryChampion = async () => {
     // Aggiunto controllo per newLegendary.shardType.trim() per evitare "UNKNOWN"
     if (newLegendary.name.trim() && newLegendary.player && newLegendary.shardType.trim()) {
+      setIsProcessingAction(true); // Inizia l'azione
       const championToSend = {
         name: newLegendary.name.trim(),
         type: newLegendary.type,
@@ -234,12 +277,15 @@ const ShardTracker = () => {
           player: ''
         });
         setShowLegendaryForm(false);
+        toast.success("Campione leggendario aggiunto!"); // Notifica di successo
       } catch (error) {
         console.error("Errore nell'aggiunta del campione leggendario:", error);
+        toast.error("Errore nell'aggiunta del campione leggendario."); // Notifica di errore
+      } finally {
+        setIsProcessingAction(false); // Termina l'azione
       }
     } else {
-        console.warn("Impossibile aggiungere campione: nome, giocatore o tipo scheggia mancante.");
-        // Puoi aggiungere un alert o un messaggio UI qui per l'utente
+        toast.warn("Compila tutti i campi richiesti per aggiungere un campione!"); // Avviso per campi mancanti
     }
   };
 
@@ -251,6 +297,7 @@ const ShardTracker = () => {
   // Funzione per confermare ed eseguire l'eliminazione del campione leggendario
   const confirmDeleteLegendaryChampion = async () => {
     if (legendaryToDelete) {
+      setIsProcessingAction(true); // Inizia l'azione
       try {
         const response = await fetch('/.netlify/functions/deleteLegendaryChampion', {
           method: 'DELETE',
@@ -264,8 +311,12 @@ const ShardTracker = () => {
 
         setLegendaryChampions(prevChampions => prevChampions.filter(c => c.id !== legendaryToDelete));
         setLegendaryToDelete(null);
+        toast.success("Campione leggendario eliminato!"); // Notifica di successo
       } catch (error) {
         console.error("Errore nell'eliminazione del campione:", error);
+        toast.error("Errore nell'eliminazione del campione."); // Notifica di errore
+      } finally {
+        setIsProcessingAction(false); // Termina l'azione
       }
     }
   };
@@ -277,7 +328,8 @@ const ShardTracker = () => {
 
   // Funzione di supporto per ottenere il nome del giocatore tramite ID
   const getPlayerName = (playerId) => {
-    const player = players.find(p => p.id === playerId);
+    // Assicurati di confrontare tipi uguali (es. entrambi number)
+    const player = players.find(p => p.id === parseInt(playerId));
     return player ? player.name : 'Sconosciuto';
   };
 
@@ -295,9 +347,7 @@ const ShardTracker = () => {
 
   // Funzione per calcolare il totale delle schegge di tutti i giocatori
   const getTotalShards = () => {
-    // Aggiunto controllo per assicurarsi che players sia un array prima di chiamare reduce
     return (Array.isArray(players) ? players : []).reduce((total, player) => {
-      // Aggiunto controllo per assicurarsi che player.shards sia un oggetto prima di Object.values
       return total + Object.values(player.shards || {}).reduce((sum, count) => sum + count, 0);
     }, 0);
   };
@@ -309,6 +359,8 @@ const ShardTracker = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 font-inter">
+      <ToastContainer position="bottom-right" autoClose={3000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover />
+
       {/* Stili globali per il font e la scrollbar */}
       <style>
         {`
@@ -353,324 +405,394 @@ const ShardTracker = () => {
         `}
       </style>
       <div className="max-w-7xl mx-auto">
-        {/* Sezione Intestazione */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 mb-6 shadow-lg transform transition-all duration-300 hover:scale-[1.01]">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-            <Gem className="text-yellow-400" />
-            Raid Shadow Legends - Tracciatore Schegge
-          </h1>
-          <div className="flex flex-wrap items-center gap-6 text-sm opacity-90">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              <span>Data: {getCurrentDate()}</span>
+        {isLoadingInitialData ? (
+          <div className="text-center py-12 text-blue-300 text-2xl animate-pulse">
+            Caricamento dati...
+          </div>
+        ) : (
+          <>
+            {/* Sezione Intestazione */}
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 mb-6 shadow-lg transform transition-all duration-300 hover:scale-[1.01]">
+              <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+                <Gem className="text-yellow-400" />
+                Raid Shadow Legends - Tracciatore Schegge
+              </h1>
+              <div className="flex flex-wrap items-center gap-6 text-sm opacity-90">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4" />
+                  <span>Data: {getCurrentDate()}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  <span>Giocatori: {players.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Gem className="w-4 h-4" />
+                  <span>Schegge totali: {getTotalShards()}</span>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              <span>Giocatori: {players.length}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Gem className="w-4 h-4" />
-              <span>Schegge totali: {getTotalShards()}</span>
-            </div>
-          </div>
-        </div>
 
-        {/* Sezione Aggiungi Giocatore */}
-        <div className="bg-gray-800 rounded-lg p-4 mb-6 shadow-lg">
-          <h2 className="text-xl font-bold mb-4">Aggiungi Giocatore</h2>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={newPlayerName}
-              onChange={(e) => setNewPlayerName(e.target.value)}
-              placeholder="Nome giocatore"
-              className="flex-1 px-3 py-2 bg-gray-700 rounded-md border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-gray-400"
-              onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
-            />
-            <button
-              onClick={addPlayer}
-              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all duration-200 shadow-md hover:shadow-lg"
-            >
-              <Plus className="w-4 h-4" />
-              Aggiungi
-            </button>
-          </div>
-        </div>
-
-        {/* Sezione Tabella Giocatori */}
-        {players.length > 0 && (
-          <div className="bg-gray-800 rounded-lg p-4 mb-6 shadow-lg overflow-x-auto">
-            <h2 className="text-xl font-bold mb-4">Schegge per Giocatore</h2>
-            <table className="w-full min-w-[600px] table-auto">
-              <thead>
-                <tr className="border-b border-gray-700">
-                  <th className="text-left py-2 px-2 font-semibold">Giocatore</th>
-                  {shardTypes.map(shard => (
-                    <th key={shard.id} className="text-center py-2 px-2 font-semibold">
-                      <div className={`${shard.color} text-white px-2 py-1 rounded-md text-sm shadow-sm`}>
-                        {shard.name}
-                      </div>
-                    </th>
-                  ))}
-                  <th className="text-center py-2 px-2 font-semibold">Azioni</th>
-                </tr>
-              </thead>
-              <tbody>
-                {players.map(player => (
-                  <tr key={player.id} className="border-b border-gray-700 hover:bg-gray-750 transition-colors duration-200">
-                    <td className="py-2 px-2 font-medium">
-                      {editingPlayer === player.id ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            className="px-2 py-1 bg-gray-700 rounded-md border border-gray-600 focus:border-blue-500 focus:outline-none text-sm w-full"
-                          />
-                          <button
-                            onClick={saveEdit}
-                            className="text-green-400 hover:text-green-300 p-1 rounded-full hover:bg-gray-600 transition-colors"
-                            title="Salva modifiche"
-                          >
-                            <Save className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={cancelEdit}
-                            className="text-red-400 hover:text-red-300 p-1 rounded-full hover:bg-gray-600 transition-colors"
-                            title="Annulla modifiche"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-green-400">{player.name}</span>
-                          <button
-                            onClick={() => startEdit(player)}
-                            className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-700 transition-colors"
-                            title="Modifica nome giocatore"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    {shardTypes.map(shard => (
-                      <td key={shard.id} className="text-center py-2 px-2">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => updateShardCount(player.id, shard.id, -1)}
-                            className="w-6 h-6 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-full text-sm font-bold flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow-md"
-                            title={`Diminuisci ${shard.name}`}
-                          >
-                            -
-                          </button>
-                          <span className="font-bold text-lg min-w-[2rem] text-center">
-                            {player.shards[shard.id]}
-                          </span>
-                          <button
-                            onClick={() => updateShardCount(player.id, shard.id, 1)}
-                            className="w-6 h-6 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-full text-sm font-bold flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow-md"
-                            title={`Aumenta ${shard.name}`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </td>
-                    ))}
-                    <td className="text-center py-2 px-2">
-                      <button
-                        onClick={() => deletePlayer(player.id)}
-                        className="text-red-400 hover:text-red-300 p-1 rounded-full hover:bg-gray-700 transition-colors"
-                        title="Elimina giocatore"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Sezione Campioni Leggendari */}
-        <div className="bg-gray-800 rounded-lg p-4 shadow-lg">
-          <div className="flex flex-col sm:flex-row items-center justify-between mb-4 gap-4">
-            <h2 className="text-xl font-bold text-yellow-400">LEGGENDARI OTTENUTI</h2>
-            <button
-              onClick={() => setShowLegendaryForm(!showLegendaryForm)}
-              className="bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all duration-200 shadow-md hover:shadow-lg"
-            >
-              <Plus className="w-4 h-4" />
-              Aggiungi Leggendario
-            </button>
-          </div>
-
-          {/* Modulo Aggiungi Leggendario */}
-          {showLegendaryForm && (
-            <div className="bg-gray-700 rounded-lg p-4 mb-4 shadow-inner">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Sezione Aggiungi Giocatore */}
+            <div className="bg-gray-800 rounded-lg p-4 mb-6 shadow-lg">
+              <h2 className="text-xl font-bold mb-4">Aggiungi Giocatore</h2>
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
-                  value={newLegendary.name}
-                  onChange={(e) => setNewLegendary({...newLegendary, name: e.target.value})}
-                  placeholder="Nome campione"
-                  className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-gray-400"
+                  value={newPlayerName}
+                  onChange={(e) => setNewPlayerName(e.target.value)}
+                  placeholder="Nome giocatore"
+                  className="flex-1 px-3 py-2 bg-gray-700 rounded-md border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-gray-400"
+                  onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
+                  disabled={isProcessingAction}
                 />
-                <select
-                  value={newLegendary.type}
-                  onChange={(e) => setNewLegendary({...newLegendary, type: e.target.value})}
-                  className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="normal">Normale</option>
-                  <option value="void">Void</option>
-                </select>
-                <select
-                  value={newLegendary.shardType}
-                  onChange={(e) => setNewLegendary({...newLegendary, shardType: e.target.value.trim()})} // Aggiunto .trim() qui
-                  className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="">Seleziona tipo scheggia</option>
-                  {shardTypes.map(shard => (
-                    <option key={shard.id} value={shard.id}>{shard.name}</option>
-                  ))}
-                </select>
-                <input
-                  type="date"
-                  value={newLegendary.date}
-                  onChange={(e) => setNewLegendary({...newLegendary, date: e.target.value})}
-                  className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                />
-                <select
-                  value={newLegendary.player}
-                  onChange={(e) => setNewLegendary({...newLegendary, player: e.target.value})}
-                  className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                >
-                  <option value="">Seleziona giocatore</option>
-                  {players.map(player => (
-                    <option key={player.id} value={player.id}>{player.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex gap-2 justify-end">
                 <button
-                  onClick={addLegendaryChampion}
-                  className="bg-green-600 hover:bg-green-700 active:bg-green-800 px-4 py-2 rounded-md transition-all duration-200 shadow-md hover:shadow-lg"
+                  onClick={addPlayer}
+                  className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all duration-200 shadow-md hover:shadow-lg"
+                  disabled={isProcessingAction}
                 >
+                  <Plus className="w-4 h-4" />
                   Aggiungi
                 </button>
-                <button
-                  onClick={() => setShowLegendaryForm(false)}
-                  className="bg-gray-600 hover:bg-gray-700 active:bg-gray-800 px-4 py-2 rounded-md transition-all duration-200 shadow-md hover:shadow-lg"
-                >
-                  Annulla
-                </button>
               </div>
             </div>
-          )}
 
-          {/* Elenco Campioni Leggendari */}
-          {legendaryChampions.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {legendaryChampions.map(champion => (
-                <div key={champion.id} className="bg-gray-700 rounded-lg p-4 border-l-4 border-yellow-500 shadow-md hover:shadow-lg transition-shadow duration-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-bold text-yellow-400">{champion.name}</h3>
-                    <button
-                      onClick={() => deleteLegendaryChampion(champion.id)}
-                      className="text-red-400 hover:text-red-300 p-1 rounded-full hover:bg-gray-600 transition-colors"
-                      title="Elimina campione"
+            {/* Sezione Tabella Giocatori */}
+            {players.length > 0 && (
+              <div className="bg-gray-800 rounded-lg p-4 mb-6 shadow-lg overflow-x-auto">
+                <h2 className="text-xl font-bold mb-4">Schegge per Giocatore</h2>
+                <table className="w-full min-w-[600px] table-auto">
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      <th className="text-left py-2 px-2 font-semibold">Giocatore</th>
+                      {shardTypes.map(shard => (
+                        <th key={shard.id} className="text-center py-2 px-2 font-semibold">
+                          <div className={`${shard.color} text-white px-2 py-1 rounded-md text-sm shadow-sm`}>
+                            {shard.name}
+                          </div>
+                        </th>
+                      ))}
+                      <th className="text-center py-2 px-2 font-semibold">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {players.map(player => (
+                      <tr key={player.id} className="border-b border-gray-700 hover:bg-gray-750 transition-colors duration-200">
+                        <td className="py-2 px-2 font-medium">
+                          {editingPlayer === player.id ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                className="px-2 py-1 bg-gray-700 rounded-md border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none text-sm w-full"
+                                disabled={isProcessingAction}
+                              />
+                              <button
+                                onClick={saveEdit}
+                                className="text-green-400 hover:text-green-300 p-1 rounded-full hover:bg-gray-600 transition-colors"
+                                title="Salva modifiche"
+                                disabled={isProcessingAction}
+                              >
+                                <Save className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="text-red-400 hover:text-red-300 p-1 rounded-full hover:bg-gray-600 transition-colors"
+                                title="Annulla modifiche"
+                                disabled={isProcessingAction}
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="text-green-400">{player.name}</span>
+                              <button
+                                onClick={() => startEdit(player)}
+                                className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-700 transition-colors"
+                                title="Modifica nome giocatore"
+                                disabled={isProcessingAction}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        {/* Sezione Modifica Schegge (Input Manuale/Reset/+/-) */}
+                        <td key={shard.id} className="text-center py-2 px-2">
+                          <div className="flex items-center justify-center gap-2">
+                            {editingShardInput.playerId === player.id && editingShardInput.shardType === shard.id ? (
+                              // Modalità di input manuale
+                              <>
+                                <input
+                                  type="number"
+                                  value={editingShardInput.value}
+                                  onChange={(e) => setEditingShardInput({ ...editingShardInput, value: e.target.value })}
+                                  onBlur={() => updateShardCount(player.id, shard.id, null, editingShardInput.value)} // Salva al blur
+                                  onKeyPress={(e) => {
+                                    if (e.key === 'Enter') {
+                                      updateShardCount(player.id, shard.id, null, editingShardInput.value);
+                                      e.target.blur(); // Rimuove il focus dall'input
+                                    }
+                                  }}
+                                  className="w-16 px-2 py-1 bg-gray-700 rounded-md border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none text-sm text-center"
+                                  autoFocus // Mette il focus automaticamente all'apertura
+                                  disabled={isProcessingAction}
+                                />
+                              </>
+                            ) : (
+                              // Modalità normale (pulsanti +/- e display)
+                              <>
+                                <button
+                                  onClick={() => updateShardCount(player.id, shard.id, -1)}
+                                  className="w-6 h-6 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-full text-sm font-bold flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow-md"
+                                  title={`Diminuisci ${shard.name}`}
+                                  disabled={isProcessingAction}
+                                >
+                                  -
+                                </button>
+                                <span
+                                  className="font-bold text-lg min-w-[2rem] text-center cursor-pointer"
+                                  onClick={() => setEditingShardInput({ playerId: player.id, shardType: shard.id, value: player.shards[shard.id] || 0 })}
+                                  title="Clicca per modificare manualmente"
+                                >
+                                  {player.shards[shard.id] || 0}
+                                </span>
+                                <button
+                                  onClick={() => updateShardCount(player.id, shard.id, 1)}
+                                  className="w-6 h-6 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-full text-sm font-bold flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow-md"
+                                  title={`Aumenta ${shard.name}`}
+                                  disabled={isProcessingAction}
+                                >
+                                  +
+                                </button>
+                                {/* Pulsante Reset */}
+                                <button
+                                  onClick={() => updateShardCount(player.id, shard.id, null, 0)} // Imposta il valore a 0
+                                  className="w-6 h-6 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white rounded-full text-xs flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow-md"
+                                  title={`Azzera ${shard.name}`}
+                                  disabled={isProcessingAction}
+                                >
+                                  Ø
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td className="text-center py-2 px-2">
+                          <button
+                            onClick={() => deletePlayer(player.id)}
+                            className="text-red-400 hover:text-red-300 p-1 rounded-full hover:bg-gray-700 transition-colors"
+                            title="Elimina giocatore"
+                            disabled={isProcessingAction}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Sezione Campioni Leggendari */}
+            <div className="bg-gray-800 rounded-lg p-4 shadow-lg">
+              <div className="flex flex-col sm:flex-row items-center justify-between mb-4 gap-4">
+                <h2 className="text-xl font-bold text-yellow-400">LEGGENDARI OTTENUTI</h2>
+                <button
+                  onClick={() => setShowLegendaryForm(!showLegendaryForm)}
+                  className="bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-all duration-200 shadow-md hover:shadow-lg"
+                  disabled={isProcessingAction}
+                >
+                  <Plus className="w-4 h-4" />
+                  Aggiungi Leggendario
+                </button>
+              </div>
+
+              {/* Modulo Aggiungi Leggendario */}
+              {showLegendaryForm && (
+                <div className="bg-gray-700 rounded-lg p-4 mb-4 shadow-inner">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <input
+                      type="text"
+                      value={newLegendary.name}
+                      onChange={(e) => setNewLegendary({...newLegendary, name: e.target.value})}
+                      placeholder="Nome campione"
+                      className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none placeholder-gray-400"
+                      disabled={isProcessingAction}
+                    />
+                    <select
+                      value={newLegendary.type}
+                      onChange={(e) => setNewLegendary({...newLegendary, type: e.target.value})}
+                      className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      disabled={isProcessingAction}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <option value="normal">Normale</option>
+                      <option value="void">Void</option>
+                    </select>
+                    <select
+                      value={newLegendary.shardType}
+                      onChange={(e) => setNewLegendary({...newLegendary, shardType: e.target.value.trim()})}
+                      className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      disabled={isProcessingAction}
+                    >
+                      <option value="">Seleziona tipo scheggia</option>
+                      {shardTypes.map(shard => (
+                        <option key={shard.id} value={shard.id}>{shard.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      value={newLegendary.date}
+                      onChange={(e) => setNewLegendary({...newLegendary, date: e.target.value})}
+                      className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      disabled={isProcessingAction}
+                    />
+                    <select
+                      value={newLegendary.player}
+                      onChange={(e) => setNewLegendary({...newLegendary, player: e.target.value})}
+                      className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      disabled={isProcessingAction}
+                    >
+                      <option value="">Seleziona giocatore</option>
+                      {players.map(player => (
+                        <option key={player.id} value={player.id}>{player.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={addLegendaryChampion}
+                      className="bg-green-600 hover:bg-green-700 active:bg-green-800 px-4 py-2 rounded-md transition-all duration-200 shadow-md hover:shadow-lg"
+                      disabled={isProcessingAction}
+                    >
+                      Aggiungi
+                    </button>
+                    <button
+                      onClick={() => setShowLegendaryForm(false)}
+                      className="bg-gray-600 hover:bg-gray-700 active:bg-gray-800 px-4 py-2 rounded-md transition-all duration-200 shadow-md hover:shadow-lg"
+                      disabled={isProcessingAction}
+                    >
+                      Annulla
                     </button>
                   </div>
-                  <div className="text-sm text-gray-300 space-y-1">
-                    <p>Tipo: <span className={champion.type === 'void' ? 'text-purple-400 font-medium' : 'text-blue-400 font-medium'}>
-                      {champion.type === 'void' ? 'Void' : 'Normale'}
-                    </span></p>
-                    <p>Scheggia: <span className={`px-2 py-1 rounded-md text-xs font-semibold ${getShardTypeColor(champion.shard_type)} text-white`}> {/* Modificato da champion.shardType a champion.shard_type */}
-                      {getShardTypeName(champion.shard_type)} {/* Modificato da champion.shardType a champion.shard_type */}
-                    </span></p>
-                    <p>Data: <span className="font-medium">{new Date(champion.date).toLocaleDateString('it-IT')}</span></p>
-                    <p>Giocatore: <span className="text-green-400 font-medium">{getPlayerName(champion.player_id)}</span></p> {/* Modificato da champion.player a champion.player_id */}
+                </div>
+              )}
+
+              {/* Elenco Campioni Leggendari */}
+              {legendaryChampions.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {legendaryChampions.map(champion => (
+                    <div key={champion.id} className="bg-gray-700 rounded-lg p-4 border-l-4 border-yellow-500 shadow-md hover:shadow-lg transition-shadow duration-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-bold text-yellow-400">{champion.name}</h3>
+                        <button
+                          onClick={() => deleteLegendaryChampion(champion.id)}
+                          className="text-red-400 hover:text-red-300 p-1 rounded-full hover:bg-gray-600 transition-colors"
+                          title="Elimina campione"
+                          disabled={isProcessingAction}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="text-sm text-gray-300 space-y-1">
+                        <p>Tipo: <span className={champion.type === 'void' ? 'text-purple-400 font-medium' : 'text-blue-400 font-medium'}>
+                          {champion.type === 'void' ? 'Void' : 'Normale'}
+                        </span></p>
+                        <p>Scheggia: <span className={`px-2 py-1 rounded-md text-xs font-semibold ${getShardTypeColor(champion.shard_type)} text-white`}>
+                          {getShardTypeName(champion.shard_type)}
+                        </span></p>
+                        <p>Data: <span className="font-medium">{new Date(champion.date).toLocaleDateString('it-IT')}</span></p>
+                        <p>Giocatore: <span className="text-green-400 font-medium">{getPlayerName(champion.player_id)}</span></p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400 italic">
+                  Nessun campione leggendario ancora ottenuto. Aggiungine uno!
+                </div>
+              )}
+            </div>
+
+            {/* Modale di Conferma per l'Eliminazione del Giocatore */}
+            {playerToDelete && (
+              <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fade-in"
+                   onClick={() => cancelDeletePlayer()}>
+                <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-2xl transform scale-95 animate-scale-up"
+                     onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-xl font-bold mb-4 text-red-400 flex items-center gap-2">
+                    <Trash2 className="w-5 h-5" /> Conferma Eliminazione Giocatore
+                  </h3>
+                  <p className="text-gray-300 mb-6">
+                    Sei sicuro di voler eliminare il giocatore <span className="font-bold text-green-400">
+                      {getPlayerName(playerToDelete)}
+                    </span>?
+                    <br />
+                    <span className="text-sm text-yellow-400 mt-2 block">
+                      Verranno eliminati anche tutti i suoi campioni leggendari associati. Questa azione è irreversibile.
+                    </span>
+                  </p>
+                  <div className="flex gap-4 justify-end">
+                    <button
+                      onClick={cancelDeletePlayer}
+                      className="px-4 py-2 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 rounded-md transition-colors duration-200 shadow-md"
+                      disabled={isProcessingAction}
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      onClick={confirmDeletePlayer}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-md transition-colors duration-200 shadow-md"
+                      disabled={isProcessingAction}
+                    >
+                      Elimina
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-400 italic">
-              Nessun campione leggendario ancora ottenuto. Aggiungine uno!
-            </div>
-          )}
-        </div>
-
-        {/* Modale di Conferma per l'Eliminazione del Giocatore */}
-        {playerToDelete && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fade-in">
-            <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-2xl transform scale-95 animate-scale-up">
-              <h3 className="text-xl font-bold mb-4 text-red-400 flex items-center gap-2">
-                <Trash2 className="w-5 h-5" /> Conferma Eliminazione Giocatore
-              </h3>
-              <p className="text-gray-300 mb-6">
-                Sei sicuro di voler eliminare il giocatore <span className="font-bold text-green-400">
-                  {getPlayerName(playerToDelete)}
-                </span>?
-                <br />
-                <span className="text-sm text-yellow-400 mt-2 block">
-                  Verranno eliminati anche tutti i suoi campioni leggendari associati. Questa azione è irreversibile.
-                </span>
-              </p>
-              <div className="flex gap-4 justify-end">
-                <button
-                  onClick={cancelDeletePlayer}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 rounded-md transition-colors duration-200 shadow-md"
-                >
-                  Annulla
-                </button>
-                <button
-                  onClick={confirmDeletePlayer}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-md transition-colors duration-200 shadow-md"
-                >
-                  Elimina
-                </button>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* Modale di Conferma per l'Eliminazione del Campione Leggendario */}
-        {legendaryToDelete && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fade-in">
-            <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-2xl transform scale-95 animate-scale-up">
-              <h3 className="text-xl font-bold mb-4 text-red-400 flex items-center gap-2">
-                <Trash2 className="w-5 h-5" /> Conferma Eliminazione Campione
-              </h3>
-              <p className="text-gray-300 mb-6">
-                Sei sicuro di voler eliminare il campione leggendario <span className="font-bold text-yellow-400">
-                  {legendaryChampions.find(c => c.id === legendaryToDelete)?.name || 'Sconosciuto'}
-                </span>?
-                <br />
-                <span className="text-sm text-yellow-400 mt-2 block">
-                  Questa azione è irreversibile.
-                </span>
-              </p>
-              <div className="flex gap-4 justify-end">
-                <button
-                  onClick={cancelDeleteLegendaryChampion}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 rounded-md transition-colors duration-200 shadow-md"
-                >
-                  Annulla
-                </button>
-                <button
-                  onClick={confirmDeleteLegendaryChampion}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-md transition-colors duration-200 shadow-md"
-                >
-                  Elimina
-                </button>
+            {/* Modale di Conferma per l'Eliminazione del Campione Leggendario */}
+            {legendaryToDelete && (
+              <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fade-in"
+                   onClick={() => cancelDeleteLegendaryChampion()}>
+                <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full shadow-2xl transform scale-95 animate-scale-up"
+                     onClick={(e) => e.stopPropagation()}>
+                  <h3 className="text-xl font-bold mb-4 text-red-400 flex items-center gap-2">
+                    <Trash2 className="w-5 h-5" /> Conferma Eliminazione Campione
+                  </h3>
+                  <p className="text-gray-300 mb-6">
+                    Sei sicuro di voler eliminare il campione leggendario <span className="font-bold text-yellow-400">
+                      {legendaryChampions.find(c => c.id === legendaryToDelete)?.name || 'Sconosciuto'}
+                    </span>?
+                    <br />
+                    <span className="text-sm text-yellow-400 mt-2 block">
+                      Questa azione è irreversibile.
+                    </span>
+                  </p>
+                  <div className="flex gap-4 justify-end">
+                    <button
+                      onClick={cancelDeleteLegendaryChampion}
+                      className="px-4 py-2 bg-gray-600 hover:bg-gray-700 active:bg-gray-800 rounded-md transition-colors duration-200 shadow-md"
+                      disabled={isProcessingAction}
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      onClick={confirmDeleteLegendaryChampion}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-md transition-colors duration-200 shadow-md"
+                      disabled={isProcessingAction}
+                    >
+                      Elimina
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'; // Assicurati di avere useEffect qui
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit, Save, X, Calendar, Users, Gem } from 'lucide-react';
 
 const ShardTracker = () => {
@@ -25,17 +25,47 @@ const ShardTracker = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // --- Caricamento Giocatori ---
         const playersResponse = await fetch('/.netlify/functions/getPlayers');
+        if (!playersResponse.ok) {
+          const errorBody = await playersResponse.text();
+          console.error("Errore nel fetch dei giocatori:", playersResponse.status, playersResponse.statusText, errorBody);
+          // Importante: in caso di errore, inizializza con un array vuoto per evitare "reduce is not a function"
+          setPlayers([]);
+          throw new Error('Failed to fetch players');
+        }
         const playersData = await playersResponse.json();
-        setPlayers(playersData);
+        // Controllo aggiuntivo per assicurarsi che i dati siano un array
+        if (!Array.isArray(playersData)) {
+            console.error("I dati dei giocatori ricevuti non sono un array:", playersData);
+            setPlayers([]);
+        } else {
+            setPlayers(playersData);
+        }
 
+        // --- Caricamento Campioni Leggendari ---
         const championsResponse = await fetch('/.netlify/functions/getLegendaryChampions');
+        if (!championsResponse.ok) {
+          const errorBody = await championsResponse.text();
+          console.error("Errore nel fetch dei campioni:", championsResponse.status, championsResponse.statusText, errorBody);
+          // Importante: in caso di errore, inizializza con un array vuoto
+          setLegendaryChampions([]);
+          throw new Error('Failed to fetch legendary champions');
+        }
         const championsData = await championsResponse.json();
-        setLegendaryChampions(championsData);
+        // Controllo aggiuntivo per assicurarsi che i dati siano un array
+        if (!Array.isArray(championsData)) {
+            console.error("I dati dei campioni ricevuti non sono un array:", championsData);
+            setLegendaryChampions([]);
+        } else {
+            setLegendaryChampions(championsData);
+        }
 
       } catch (error) {
-        console.error("Errore nel caricamento dei dati:", error);
-        // Implementa qui una gestione dell'errore visibile all'utente
+        console.error("Errore generale nel caricamento dei dati:", error);
+        // Assicurati che gli stati siano array anche in caso di eccezione generale
+        setPlayers([]);
+        setLegendaryChampions([]);
       }
     };
 
@@ -65,9 +95,12 @@ const ShardTracker = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(playerToSend),
         });
-        if (!response.ok) throw new Error('Errore nella creazione del giocatore');
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Errore nella creazione del giocatore: ${response.status} ${response.statusText} - ${errorBody}`);
+        }
         const createdPlayer = await response.json();
-        setPlayers([...players, createdPlayer]);
+        setPlayers(prevPlayers => [...prevPlayers, createdPlayer]); // Usa prevPlayers per lo stato più recente
         setNewPlayerName('');
       } catch (error) {
         console.error("Errore nell'aggiunta del giocatore:", error);
@@ -89,11 +122,14 @@ const ShardTracker = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ playerId: playerToDelete }),
         });
-        if (!response.ok) throw new Error('Errore nell\'eliminazione del giocatore');
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Errore nell'eliminazione del giocatore: ${response.status} ${response.statusText} - ${errorBody}`);
+        }
 
-        setPlayers(players.filter(p => p.id !== playerToDelete));
+        setPlayers(prevPlayers => prevPlayers.filter(p => p.id !== playerToDelete));
         // Rimuove anche i campioni leggendari associati (la FK in DB con ON DELETE CASCADE lo farà, ma aggiorniamo anche lo stato locale)
-        setLegendaryChampions(legendaryChampions.filter(c => c.player !== playerToDelete));
+        setLegendaryChampions(prevChampions => prevChampions.filter(c => c.player !== playerToDelete));
         setPlayerToDelete(null);
       } catch (error) {
         console.error("Errore nell'eliminazione del giocatore:", error);
@@ -121,10 +157,13 @@ const ShardTracker = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ playerId: editingPlayer, newName: editName.trim() }),
         });
-        if (!response.ok) throw new Error('Errore nell\'aggiornamento del nome del giocatore');
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Errore nell'aggiornamento del nome: ${response.status} ${response.statusText} - ${errorBody}`);
+        }
         const updatedPlayer = await response.json();
 
-        setPlayers(players.map(p =>
+        setPlayers(prevPlayers => prevPlayers.map(p =>
           p.id === editingPlayer ? updatedPlayer : p
         ));
         setEditingPlayer(null);
@@ -149,10 +188,13 @@ const ShardTracker = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId, shardType, increment }),
       });
-      if (!response.ok) throw new Error('Errore nell\'aggiornamento delle schegge');
+      if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Errore nell'aggiornamento delle schegge: ${response.status} ${response.statusText} - ${errorBody}`);
+      }
       const updatedPlayer = await response.json(); // Ricevi il giocatore con le schegge aggiornate
 
-      setPlayers(players.map(p =>
+      setPlayers(prevPlayers => prevPlayers.map(p =>
         p.id === playerId ? updatedPlayer : p
       ));
     } catch (error) {
@@ -177,9 +219,12 @@ const ShardTracker = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(championToSend),
         });
-        if (!response.ok) throw new Error('Errore nella creazione del campione');
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Errore nella creazione del campione: ${response.status} ${response.statusText} - ${errorBody}`);
+        }
         const createdChampion = await response.json();
-        setLegendaryChampions([...legendaryChampions, createdChampion]);
+        setLegendaryChampions(prevChampions => [...prevChampions, createdChampion]);
         setNewLegendary({
           name: '',
           type: 'normal',
@@ -208,9 +253,12 @@ const ShardTracker = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ championId: legendaryToDelete }),
         });
-        if (!response.ok) throw new Error('Errore nell\'eliminazione del campione');
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Errore nell'eliminazione del campione: ${response.status} ${response.statusText} - ${errorBody}`);
+        }
 
-        setLegendaryChampions(legendaryChampions.filter(c => c.id !== legendaryToDelete));
+        setLegendaryChampions(prevChampions => prevChampions.filter(c => c.id !== legendaryToDelete));
         setLegendaryToDelete(null);
       } catch (error) {
         console.error("Errore nell'eliminazione del campione:", error);
@@ -243,7 +291,9 @@ const ShardTracker = () => {
 
   // Funzione per calcolare il totale delle schegge di tutti i giocatori
   const getTotalShards = () => {
-    return players.reduce((total, player) => {
+    // Aggiunto controllo per assicurarsi che players sia un array prima di chiamare reduce
+    return (Array.isArray(players) ? players : []).reduce((total, player) => {
+      // Aggiunto controllo per assicurarsi che player.shards sia un oggetto prima di Object.values
       return total + Object.values(player.shards || {}).reduce((sum, count) => sum + count, 0);
     }, 0);
   };

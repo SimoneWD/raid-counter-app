@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, Save, X, Calendar, Users, Gem } from 'lucide-react';
+import React from 'react';
+// Oppure se usi altre cose da 'react' come useState:
+// import React, { useState } from 'react';import { Plus, Trash2, Edit, Save, X, Calendar, Users, Gem } from 'lucide-react';
 
 const ShardTracker = () => {
   // Stato per la gestione dei giocatori, delle loro schegge e della modalità di modifica

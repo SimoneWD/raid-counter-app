@@ -7,7 +7,7 @@ const ShardTracker = () => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [editingPlayer, setEditingPlayer] = useState(null);
   const [editName, setEditName] = useState('');
-  const [playerToDelete, setPlayerToDelete] = useState(null);
+  const [playerToDelete, setPlayerToDelete] = useState(null); // Stato per la conferma di eliminazione del giocatore
 
   // Stato per la gestione dei campioni leggendari
   const [legendaryChampions, setLegendaryChampions] = useState([]);
@@ -15,11 +15,11 @@ const ShardTracker = () => {
   const [newLegendary, setNewLegendary] = useState({
     name: '',
     type: 'normal',
-    shardType: 'ancient',
+    shardType: 'ancient', // Tipo di scheggia predefinito per il nuovo leggendario
     date: new Date().toISOString().split('T')[0],
     player: ''
   });
-  const [legendaryToDelete, setLegendaryToDelete] = useState(null);
+  const [legendaryToDelete, setLegendaryToDelete] = useState(null); // Stato per la conferma di eliminazione del campione leggendario
 
   // Carica i dati dal database all'avvio dell'applicazione
   useEffect(() => {
@@ -72,7 +72,7 @@ const ShardTracker = () => {
     fetchData();
   }, []); // Esegue solo al montaggio del componente
 
-  // Definisce i tipi di schegge disponibili con le loro proprietà
+  // Definisce i tipi di schegge disponibili con le loro proprietà (ID, nome, colore Tailwind)
   const shardTypes = [
     { id: 'ancient', name: 'ANCIENT', color: 'bg-blue-500' },
     { id: 'void', name: 'VOID', color: 'bg-purple-500' },
@@ -129,7 +129,7 @@ const ShardTracker = () => {
 
         setPlayers(prevPlayers => prevPlayers.filter(p => p.id !== playerToDelete));
         // Rimuove anche i campioni leggendari associati (la FK in DB con ON DELETE CASCADE lo farà, ma aggiorniamo anche lo stato locale)
-        setLegendaryChampions(prevChampions => prevChampions.filter(c => c.player !== playerToDelete));
+        setLegendaryChampions(prevChampions => prevChampions.filter(c => c.player_id !== playerToDelete)); // Usa player_id per il filtro
         setPlayerToDelete(null);
       } catch (error) {
         console.error("Errore nell'eliminazione del giocatore:", error);
@@ -204,13 +204,14 @@ const ShardTracker = () => {
 
   // Funzione per aggiungere un nuovo campione leggendario
   const addLegendaryChampion = async () => {
-    if (newLegendary.name.trim() && newLegendary.player) {
+    // Aggiunto controllo per newLegendary.shardType.trim() per evitare "UNKNOWN"
+    if (newLegendary.name.trim() && newLegendary.player && newLegendary.shardType.trim()) {
       const championToSend = {
         name: newLegendary.name.trim(),
         type: newLegendary.type,
         shardType: newLegendary.shardType,
         date: newLegendary.date,
-        player: parseInt(newLegendary.player) // Assicurati che l'ID del giocatore sia un intero
+        player: parseInt(newLegendary.player) // Assicura che l'ID del giocatore sia un intero
       };
 
       try {
@@ -236,6 +237,9 @@ const ShardTracker = () => {
       } catch (error) {
         console.error("Errore nell'aggiunta del campione leggendario:", error);
       }
+    } else {
+        console.warn("Impossibile aggiungere campione: nome, giocatore o tipo scheggia mancante.");
+        // Puoi aggiungere un alert o un messaggio UI qui per l'utente
     }
   };
 
@@ -524,7 +528,7 @@ const ShardTracker = () => {
                 </select>
                 <select
                   value={newLegendary.shardType}
-                  onChange={(e) => setNewLegendary({...newLegendary, shardType: e.target.value})}
+                  onChange={(e) => setNewLegendary({...newLegendary, shardType: e.target.value.trim()})} // Aggiunto .trim() qui
                   className="px-3 py-2 bg-gray-600 rounded-md border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                 >
                   <option value="">Seleziona tipo scheggia</option>
@@ -585,11 +589,11 @@ const ShardTracker = () => {
                     <p>Tipo: <span className={champion.type === 'void' ? 'text-purple-400 font-medium' : 'text-blue-400 font-medium'}>
                       {champion.type === 'void' ? 'Void' : 'Normale'}
                     </span></p>
-                    <p>Scheggia: <span className={`px-2 py-1 rounded-md text-xs font-semibold ${getShardTypeColor(champion.shardType)} text-white`}>
-                      {getShardTypeName(champion.shardType)}
+                    <p>Scheggia: <span className={`px-2 py-1 rounded-md text-xs font-semibold ${getShardTypeColor(champion.shard_type)} text-white`}> {/* Modificato da champion.shardType a champion.shard_type */}
+                      {getShardTypeName(champion.shard_type)} {/* Modificato da champion.shardType a champion.shard_type */}
                     </span></p>
                     <p>Data: <span className="font-medium">{new Date(champion.date).toLocaleDateString('it-IT')}</span></p>
-                    <p>Giocatore: <span className="text-green-400 font-medium">{getPlayerName(champion.player)}</span></p>
+                    <p>Giocatore: <span className="text-green-400 font-medium">{getPlayerName(champion.player_id)}</span></p> {/* Modificato da champion.player a champion.player_id */}
                   </div>
                 </div>
               ))}
